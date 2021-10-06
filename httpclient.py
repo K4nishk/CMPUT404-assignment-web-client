@@ -18,6 +18,8 @@
 # Write your own HTTP GET and POST
 # The point is to understand what you have to send and get experience with it
 
+# python3 -m http.server 27601 --bind 127.0.0.1
+
 import sys
 import socket
 import re
@@ -33,7 +35,34 @@ class HTTPResponse(object):
         self.body = body
 
 class HTTPClient(object):
-    #def get_host_port(self,url):
+    def get_host_port(self,url):
+        """
+        FUNCTIONALITY:
+            * This method is used to extract the host, port and the path of the request
+
+        ARGUMENTS:
+            * self: The instance of the class.
+            * url: The string entered as an argument during the execution of this python file.
+
+        RETURNS:
+            * host: A string containing the host name
+            * port: A string containing the port addressed, 80 if not mentioned
+            * path: A string containing the path of the requested file
+        """
+
+        parsedUrl = urllib.parse.urlparse(url)
+
+        port = parsedUrl.port
+        if port is None:
+            port = 80
+
+        host = parsedUrl.hostname
+        path = parsedUrl.path
+
+        if path == "":
+            path = "/"
+
+        return host, port, path
 
     def connect(self, host, port):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -41,19 +70,88 @@ class HTTPClient(object):
         return None
 
     def get_code(self, data):
-        return None
+        """
+        FUNCTIONALITY:
+            * This method is used to get the status code of the location
+
+        ARGUMENTS:
+            * self: The instance of the class.
+            * data: A string containing the data received from the server.
+
+        RETURNS:
+            * code: An integer value containing the status code of the HTTP response
+        """
+
+        headers = self.get_headers(data)
+        request = headers.split("\r\n")[0]
+        code = request.split(" ")[1]
+
+        return int(code)
 
     def get_headers(self,data):
-        return None
+        return data.split("\r\n\r\n")[0]
 
     def get_body(self, data):
-        return None
+        """
+        FUNCTIONALITY:
+            * This method is used to get the body from the response
+
+        ARGUMENTS:
+            * self: The instance of the class.
+            * data: A string containing the data received from the server.
+
+        RETURNS:
+            * body: A string containg the body of the response
+        """
+
+        data = data.split("\r\n\r\n")
+
+        body = ""
+        if (len(data) > 1):
+            body = data[1]
+
+        return body
     
     def sendall(self, data):
         self.socket.sendall(data.encode('utf-8'))
         
     def close(self):
         self.socket.close()
+
+    def preparePayload(self, method, host, path, body=""):
+        """
+        FUNCTIONALITY:
+            * This method is used to generate the payload to be sent to the server.
+
+        ARGUMENTS:
+            * self: The instance of the class.
+            * method: A string containing GET or POST method
+            * host: A string containing the host name
+            * path: A string containing the path to the file
+            * body: A string containing the information to be sent over to the server.
+                If the method is GET then the body will be empty and if the method is POST
+                then the body will be the arguments passed during the execution of this file.
+
+        RETURNS:
+            * payload: A string containing the payload to be sent to the server
+        """
+
+        specificHeaders = ""
+
+        if method == "GET":
+            specificHeaders = "Accept-Charset: utf-8"
+        elif method == "POST":
+            length = "0"
+            if body != "":
+                length = str(len(body))
+            specificHeaders = "Content-Type: application/x-www-form-urlencoded\r\nContent-Length: " + length
+        else:
+            # Unsupported method
+            sys.exit()
+
+        payload = f'{method} {path} HTTP/1.1\r\nHost: {host}\r\nAccept: */*\r\n{specificHeaders}\r\nConnection: close\r\n\r\n{body}\r\n'
+        
+        return payload
 
     # read everything from the socket
     def recvall(self, sock):
@@ -68,13 +166,81 @@ class HTTPClient(object):
         return buffer.decode('utf-8')
 
     def GET(self, url, args=None):
-        code = 500
-        body = ""
+        """
+        FUNCTIONALITY:
+            * This method is used to implement the GET request for the client
+
+        ARGUMENTS:
+            * self: The instance of the class.
+            * url: A string containing the url of the requested server
+            * args: Additional arguments provided
+
+        RETURNS:
+            * An object of HTTPResponse class containing the status code and the body of
+                the response received from the server
+        """
+
+        # respond with the code and the body read
+        host, port, path = self.get_host_port(url)
+        
+        # establish a connection
+        self.connect(host, port)
+
+        # Send the payload
+        payload = self.preparePayload("GET", host, path)
+        self.sendall(payload)
+
+        # get the data
+        data = str(self.recvall(self.socket))
+        
+        # close the opened socket
+        self.close()
+        
+        code = self.get_code(data)
+        body = self.get_body(data)
+
+        print(body)
         return HTTPResponse(code, body)
 
     def POST(self, url, args=None):
-        code = 500
+        """
+        FUNCTIONALITY:
+            * This method is used to implement the POST request for the client
+
+        ARGUMENTS:
+            * self: The instance of the class.
+            * url: A string containing the url of the requested server
+            * args: Additional arguments provided
+
+        RETURNS:
+            * An object of HTTPResponse class containing the status code and the body of
+                the response received from the server
+        """
+
+        # respond with the code and the body read
+        host, port, path = self.get_host_port(url)
+        
+        # establish a connection
+        self.connect(host, port)
+
         body = ""
+        if args is not None:
+            body = urllib.parse.urlencode(args)
+
+        # Send the payload
+        payload = self.preparePayload("POST", host, path, body)
+        self.sendall(payload)
+
+        # get the data
+        data = str(self.recvall(self.socket))
+        
+        # close the opened socket
+        self.close()
+        
+        code = self.get_code(data)
+        body = self.get_body(data)
+
+        print(body)
         return HTTPResponse(code, body)
 
     def command(self, url, command="GET", args=None):
@@ -86,6 +252,7 @@ class HTTPClient(object):
 if __name__ == "__main__":
     client = HTTPClient()
     command = "GET"
+
     if (len(sys.argv) <= 1):
         help()
         sys.exit(1)
