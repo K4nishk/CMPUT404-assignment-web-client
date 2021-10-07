@@ -141,13 +141,15 @@ class HTTPClient(object):
         if method == "GET":
             specificHeaders = "Accept-Charset: utf-8"
         elif method == "POST":
-            length = "0"
-            if body != "":
-                length = str(len(body))
-            specificHeaders = "Content-Type: application/x-www-form-urlencoded\r\nContent-Length: " + length
+            specificHeaders = "Content-Type: application/x-www-form-urlencoded"
         else:
             # Unsupported method
             sys.exit()
+
+        length = "0"
+        if body != "":
+            length = str(len(body))
+        specificHeaders += "\r\nContent-Length: " + length
 
         payload = f'{method} {path} HTTP/1.1\r\nHost: {host}\r\nAccept: */*\r\n{specificHeaders}\r\nConnection: close\r\n\r\n{body}\r\n'
         
@@ -186,6 +188,10 @@ class HTTPClient(object):
         # establish a connection
         self.connect(host, port)
 
+        body = ""
+        if args is not None:
+            body = urllib.parse.urlencode(args)
+        
         # Send the payload
         payload = self.preparePayload("GET", host, path)
         self.sendall(payload)
